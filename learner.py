@@ -13,10 +13,9 @@ import torch
 from torch import nn as nn
 from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
 from torch.utils.data.distributed import DistributedSampler
-try:
-    from torch.utils.tensorboard import SummaryWriter
-except:
-    from tensorboardX import SummaryWriter
+
+from torch.utils.tensorboard import SummaryWriter
+
 
 import os, sys
 parentPath = os.path.abspath("..")
@@ -32,10 +31,6 @@ from nltk.translate.bleu_score import sentence_bleu
 from nltk.translate.bleu_score import SmoothingFunction
 from nltk.translate.meteor_score import meteor_score
 from nltk.translate.nist_score import sentence_nist
-try: 
-    meteor_score(["hello world"], "hi world")
-except LookupError: 
-    nltk.download('wordnet')
         
 class Metrics:
     def __init__(self):
@@ -180,7 +175,7 @@ class Learner(object):
                   do_validate=True, valid_set=None, do_test=True, test_set=None):         
         tb_writer=None
         if args.local_rank in [-1, 0]: 
-            tb_writer = SummaryWriter(f"./output/{args.model}/{args.model_size}/logs/")# the first process create tensorboard writer
+            tb_writer = SummaryWriter(f"{args.output_path}/{args.model}/{args.model_size}/logs/")# the first process create tensorboard writer
         num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"number of training parameters: {num_params}")
             
@@ -256,26 +251,14 @@ class Learner(object):
                     if args.local_rank == -1 and do_validate and global_step % args.validating_steps == 0:
                         # Only evaluate when single GPU otherwise metrics may not average well
                         assert valid_set is not None, "validate set is not provided"
-                        results, generated_text = self.run_eval(args, model, valid_set)
+                        results = self.run_eval_during_training(args, model, valid_set)
                         print(results)
                         self.report(results, global_step, tb_writer)
-                        eval_output_dir = f"./output/{args.model}/{args.model_size}/"
-                        if args.local_rank in [-1, 0]: os.makedirs(eval_output_dir, exist_ok=True)
-                        with open(os.path.join(eval_output_dir, f"valid_results{global_step}.txt"), 'w') as f_valid:
-                            f_valid.write(str(results)+'\n')
-                            f_valid.write(generated_text+'\n')
-                            
-                        if do_test:
-                            assert test_set is not None, "test set is not provided"
-                            results, generated_text = self.run_eval(args, model, test_set)
-                            with open(os.path.join(eval_output_dir, f"test_results{global_step}.txt"), 'w') as f_test:
-                                f_test.write(str(results)+'\n')
-                                f_test.write(generated_text+'\n')
                         
                     if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
                         checkpoint_prefix = 'checkpoint'
                         # Save model checkpoint
-                        output_dir = f"./output/{args.model}/{args.model_size}/models/"
+                        output_dir = f"{args.output_path}/{args.model}/{args.model_size}/models/"
                         self.save(args, model, output_dir, f'{checkpoint_prefix}-{global_step}')
 
                 if max_steps > 0 and global_step > max_steps:
@@ -368,6 +351,35 @@ class Learner(object):
         generated_text = ''.join(generated_text)
         print(generated_text)
         return result, generated_text
+
+    def run_eval_during_training(self, args, model, dataset):
+        """
+        only eval ppl to save time
+        """
+        model1 = model.module if hasattr(model, 'module') else model
+
+        eval_batch_size = 1  # args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+        sampler = SequentialSampler(dataset) if args.local_rank == -1 else DistributedSampler(dataset)
+        dataloader = DataLoader(dataset, sampler=sampler, batch_size=eval_batch_size)
+
+        device = next(model1.parameters()).device
+
+        valid_losses = []
+        for batch in tqdm(dataloader):
+            batch_gpu = [t.to(device) for t in batch]
+            with torch.no_grad():
+                loss = model1.validate(*batch_gpu)
+            valid_losses.append(loss)
+
+        valid_loss = float(np.mean(valid_losses))
+        perplexity = torch.exp(torch.tensor(valid_loss)).item()
+
+        result = {'valid_loss': valid_loss, 'perplexity': perplexity}
+
+        logger.info("***** Validation results *****")
+        for key in sorted(result.keys()):
+            logger.info("  %s = %s", key, str(result[key]))
+        return result
 
 
     def report(self, results, step, tb_writer):

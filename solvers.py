@@ -5,15 +5,7 @@
 import os
 import logging
 import torch
-#try:
-#    from torch.utils.tensorboard import SummaryWriter
-#except:
-from tensorboardX import SummaryWriter
-from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
-from transformers import (WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup)
-from tqdm import tqdm, trange
 
-import models
 from models import DialogBERT
 from data_loader import DialogTransformerDataset, HBertMseEuopDataset
 from learner import Learner
@@ -54,15 +46,15 @@ class DialogBERTSolver(object):
         
     def load(self, args):
         # Load a trained model and vocabulary that you have fine-tuned
-        assert args.reload_from<=0, "please specify the checkpoint iteration in args.reload_from" 
-        output_dir = os.path.join(f"./output/{args.model}/{args.model_size}/models/", f'checkpoint-{args.reload_from}') 
-        self.model.from_pretrained(output_dir)
+        assert args.reload_path, "please specify the checkpoint path in args.reload_path"
+        self.model.from_pretrained(args.reload_path)
         self.model.to(args.device)
         
     def train(self, args):   
         
         ## Train All
-        if args.local_rank not in [-1, 0]: torch.distributed.barrier()# only the first process process the dataset, others use cache     
+        if args.local_rank not in [-1, 0]: torch.distributed.barrier()# only the first process process the dataset, others use cache
+        # ssxy: there are special settings for MUR and DUOR, but GLCM can ignore
         train_set = HBertMseEuopDataset(
             os.path.join(args.data_path, 'train.h5'), 
             self.model.tokenizer, 
@@ -83,7 +75,7 @@ class DialogBERTSolver(object):
         self.load(args)
         test_set = HBertMseEuopDataset(os.path.join(args.data_path, 'test.h5'), self.model.tokenizer)
         result, generated_text = Learner().run_eval(args, self.model, test_set)
-        eval_output_dir = f"./output/{args.model}/"
+        eval_output_dir = f"{args.output_path}/{args.model}/"
         if args.local_rank in [-1, 0]: os.makedirs(eval_output_dir, exist_ok=True)
         with open(os.path.join(eval_output_dir, f"eval_results.txt"), 'w') as f_eval:
             f_eval.write(generated_text+'\n')

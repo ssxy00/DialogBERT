@@ -70,11 +70,11 @@ class DialogTransformerDataset(data.Dataset):
             if tok == self.tokenizer.sep_token_id:
                 floor = tmp_utt[0]
                 tmp_utt = tmp_utt[1:] 
-                utt_len = min(len(tmp_utt), self.max_utt_len) # floor is not counted in the utt length
-                utt = tmp_utt[:utt_len]            
+                utt_len = min(len(tmp_utt), self.max_utt_len) # floor is not counted in the utt length # ssxy: but cls is counted
+                utt = tmp_utt[:utt_len]  # sep might be truncated?
                 context.append(utt)  # append utt to context          
                 tmp_utt=[]  # reset tmp utt
-        response = res_arr[1:] # ignore cls token at the begining            
+        response = res_arr[1:] # ignore cls token at the begining  # ssxy: ignore floor, not cls?
         res_len = min(len(response),self.max_utt_len)
         response = response[:res_len-1] + [self.tokenizer.sep_token_id] 
         
@@ -94,7 +94,7 @@ class DialogTransformerDataset(data.Dataset):
         num_utts = min(len(context), self.max_num_utts)
         context = context[-num_utts:]
         
-        return context, response #, knowlege
+        return context, response #, knowledge
     
     def list2array(self, L, d1_len, d2_len=0, d3_len=0, dtype=np.long, pad_idx=0):
         '''  convert a list to an array or matrix  '''            
@@ -189,11 +189,11 @@ class DialogTransformerDataset(data.Dataset):
                 utts[i] = deepcopy(self.rand_utt)
             lm_label[i]= deepcopy(utt)
             #assert len(utts[i]) == len(lm_label[i]), "the size of the lm label is different to that of the masked utterance"
-            self.rand_utt = deepcopy(utt) # update random utt
+            self.rand_utt = deepcopy(utt) # update random utt  # ssxy: interesting implementation
         return utts, lm_label
         
     def shuf_ctx(self, context):    
-        perm_label = 0
+        perm_label = 0  # ssxy: the idx of permutation in permutation list ([0], [0, 1], [1, 0], ...)
         num_utts = len(context)
         if num_utts==1: 
             return context, perm_label, [0]
@@ -215,7 +215,7 @@ class HBertMseEuopDataset(DialogTransformerDataset):
     The context is shuffled for a novel energy-based order prediction approach (EUOP)
     """
     def __init__(self, file_path, tokenizer,
-                 min_num_utts=1, max_num_utts=9, max_utt_len=30, 
+                 min_num_utts=1, max_num_utts=9, max_utt_len=30,  # ssxy: why 9? including cls_utt and sep_utt
                  block_size=-1, utt_masklm=False, utt_sop=False, 
                  context_shuf=False, context_masklm=False):
         
@@ -243,11 +243,12 @@ class HBertMseEuopDataset(DialogTransformerDataset):
             context_position_ids = [0] + [p+1 for p in context_position_ids_] + [context_len-1]
             context_mlm_target = [[-100]*len(utt) for utt in context]
             
-        if self.context_masklm and context_position_perm_id<2 and len(context)>4:
+        if self.context_masklm and context_position_perm_id<2 and len(context)>4:  # ssxy: context_position_perm_id < 2 means no permutation is applied?
             context, context_mlm_target = self.mask_context(context)
         
         context_utts_attn_mask = [[1]*len(utt) for utt in context]
-        
+
+        # ssxy: padding
         context = self.list2array(context, self.max_utt_len, self.max_num_utts, pad_idx=self.tokenizer.pad_token_id) 
         context_utts_attn_mask = self.list2array(context_utts_attn_mask, self.max_utt_len, self.max_num_utts)
         context_attn_mask = self.list2array(context_attn_mask, self.max_num_utts)

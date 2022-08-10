@@ -37,6 +37,8 @@ def main():
     parser.add_argument("--output_path", default='/home/ssxy/research/project_data/DialogBERT/output', type=str, help="The output data path.")
     parser.add_argument("--bert_path", default='/home/ssxy/research/models/BERT/bert_base_uncased', type=str,
                         help="bert-base-uncased path")
+    parser.add_argument("--eval_output_path", default='/home/ssxy/research/project_data/DialogBERT/output/tmp.txt',
+                        type=str, help="The output data path.")
 
     parser.add_argument("--dataset", default='dailydial', type=str, help="dataset name")
     ## Other parameters

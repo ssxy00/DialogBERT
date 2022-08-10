@@ -75,9 +75,7 @@ class DialogBERTSolver(object):
         self.load(args)
         test_set = HBertMseEuopDataset(os.path.join(args.data_path, 'test.h5'), self.model.tokenizer)
         result, generated_text = Learner().run_eval(args, self.model, test_set)
-        eval_output_dir = f"{args.output_path}/{args.model}/"
-        if args.local_rank in [-1, 0]: os.makedirs(eval_output_dir, exist_ok=True)
-        with open(os.path.join(eval_output_dir, f"eval_results.txt"), 'w') as f_eval:
+        with open(args.eval_output_path, 'w') as f_eval:
             f_eval.write(generated_text+'\n')
         return result    
  

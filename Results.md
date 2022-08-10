@@ -33,11 +33,14 @@ tensorboard --logdir ./
 
 ```
 # seed 0
-python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/models/seed0/checkpoint-56000
+python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/models/seed0/checkpoint-56000 \
+--eval_output_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/results/seed0_ckpt56k.txt
 # seed 42
-python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/models/seed42/checkpoint-58000
+python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/models/seed42/checkpoint-58000 \
+--eval_output_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/results/seed42_ckpt58k.txt
 # seed 1000
-python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/models/seed1000/checkpoint-68000
+python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/models/seed1000/checkpoint-68000 \
+--eval_output_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/results/seed1000_ckpt68k.txt
 ```
 
 | seed | avg_len | bleu   | meteor | nist   | ppl     | rougeL | loss   |
@@ -46,5 +49,3 @@ python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBE
 | 42   | 14.9424 | 0.2054 | 0.0703 | 0.1986 | 21.6913 | 0.0859 | 3.0769 |
 | 1000 | 15.1806 | 0.2016 | 0.0691 | 0.2007 | 21.7261 | 0.0846 | 3.0785 |
 | avg  | 15.2316 | 0.2024 | 0.0696 | 0.2023 | 21.7703 | 0.085  | 3.0805 |
-
-

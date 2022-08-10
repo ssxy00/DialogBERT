@@ -40,7 +40,7 @@ def main():
     parser.add_argument("--eval_output_path", default='/home/ssxy/research/project_data/DialogBERT/output/tmp.txt',
                         type=str, help="The output data path.")
 
-    parser.add_argument("--dataset", default='dailydial', type=str, help="dataset name")
+    parser.add_argument("--dataset", default='multiwoz', type=str, help="dataset name")
     ## Other parameters
     parser.add_argument("--model", default="DialogBERT", type=str, help="The model architecture to be fine-tuned.")
     parser.add_argument("--model_size", default="tiny", type=str, help="tiny, small, base, large")
@@ -81,6 +81,7 @@ def main():
     args = parser.parse_args()
 
     args.data_path = os.path.join(args.data_path, args.dataset)
+    args.output_path = os.path.join(args.output_path, args.dataset)
 
     # Setup distant debugging if needed
     if args.server_ip and args.server_port:

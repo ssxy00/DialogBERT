@@ -1,5 +1,6 @@
 # Experimental Results
 
+## Results on DailyDialog
 Run with different random seed:
 + environment
 ```
@@ -16,7 +17,7 @@ python -m pip install tensorboard
 
 ```
 # on ubuntu
-cd /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/logs
+cd /home/ssxy/research/project_data/DialogBERT/output/dailydial/DialogBERT/tiny/logs
 conda activate glcm
 tensorboard --logdir ./
 ```
@@ -33,14 +34,14 @@ tensorboard --logdir ./
 
 ```
 # seed 0
-python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/models/seed0/checkpoint-56000 \
---eval_output_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/results/seed0_ckpt56k.txt
+python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/dailydial/DialogBERT/tiny/models/seed0/checkpoint-56000 \
+--eval_output_path /home/ssxy/research/project_data/DialogBERT/output/dailydial/DialogBERT/tiny/results/seed0_ckpt56k.txt
 # seed 42
-python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/models/seed42/checkpoint-58000 \
---eval_output_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/results/seed42_ckpt58k.txt
+python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/dailydial/DialogBERT/tiny/models/seed42/checkpoint-58000 \
+--eval_output_path /home/ssxy/research/project_data/DialogBERT/output/dailydial/DialogBERT/tiny/results/seed42_ckpt58k.txt
 # seed 1000
-python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/models/seed1000/checkpoint-68000 \
---eval_output_path /home/ssxy/research/project_data/DialogBERT/output/DialogBERT/tiny/results/seed1000_ckpt68k.txt
+python main.py --do_test --reload_path /home/ssxy/research/project_data/DialogBERT/output/dailydial/DialogBERT/tiny/models/seed1000/checkpoint-68000 \
+--eval_output_path /home/ssxy/research/project_data/DialogBERT/output/dailydial/DialogBERT/tiny/results/seed1000_ckpt68k.txt
 ```
 
 | seed | avg_len | bleu   | meteor | nist   | ppl     | rougeL | loss   |

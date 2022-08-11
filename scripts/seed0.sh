@@ -1,4 +1,4 @@
-SEED=42
+SEED=0
 dataset=multiwoz
 DATA_PATH=/home1/sxy/DialogBERT/data/
 OUTPUT_PATH=/home1/sxy/DialogBERT/output/$SEED

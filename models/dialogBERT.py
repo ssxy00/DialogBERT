@@ -18,11 +18,12 @@ parentPath = os.path.abspath("..")
 sys.path.insert(0, parentPath)  # add parent folder to path so as to import common modules
 
 from transformers import (AdamW, get_linear_schedule_with_warmup, top_k_top_p_filtering,
-                          BertConfig, BertForPreTraining, BertPreTrainedModel, BertTokenizer, BertModel,
+                          BertConfig, BertForPreTraining, BertPreTrainedModel, BertModel,
                           BertLMHeadModel)
 from transformers.modeling_bert import BertPredictionHeadTransform
 from modules import MLP, MixtureDensityNetwork
 
+from vocabs.gpt2_tokenizer import GPT2Vocab
 
 class SelfSorting(nn.Module):
     """ A Self Sorting Network which evaluates the sorting energy of each element in a sequence, adopted from the self-attention.
@@ -129,28 +130,15 @@ class DialogBERT(nn.Module):
     # TODO: 1. Enhance sorting net
     #       2. Better data loader for permutation ((avoid returning perm_id and use max(pos_ids) instead,
 
-    def __init__(self, args, base_model_name='bert-base-uncased'):
+    def __init__(self, args):
         super(DialogBERT, self).__init__()
-
-        if args.language == 'chinese': raise NotImplementedError
-
-        self.tokenizer = BertTokenizer.from_pretrained(args.bert_path)
-        if args.model_size == 'tiny':
-            self.encoder_config = BertConfig(vocab_size=30522, hidden_size=256, num_hidden_layers=6,
-                                             num_attention_heads=2, intermediate_size=1024)
-            self.utt_encoder = BertForPreTraining(self.encoder_config)
-        elif args.model_size == 'small':
-            self.encoder_config = BertConfig(vocab_size=30522, hidden_size=512, num_hidden_layers=8,
-                                             num_attention_heads=4, intermediate_size=2048)
-            self.utt_encoder = BertForPreTraining(self.encoder_config)
-        else:
-            self.encoder_config = BertConfig.from_pretrained(base_model_name, cache_dir='./cache/')
-            self.utt_encoder = BertForPreTraining.from_pretrained(base_model_name, config=self.encoder_config,
-                                                                  cache_dir='./cache/')
+        self.tokenizer = GPT2Vocab(model_path=args.gpt2_vocab_dir)
+        self.encoder_config = BertConfig(vocab_size=len(self.tokenizer), hidden_size=512, num_hidden_layers=3,
+                                         num_attention_heads=8, intermediate_size=2048)
+        self.utt_encoder = BertForPreTraining(self.encoder_config)
 
         self.context_encoder = BertModel(self.encoder_config)  # context encoder: encode context to vector
 
-        # TODO xinyi: mlm_trans and order trans?
         self.mlm_mode = 'mse'  # 'mdn', 'mse'
         if self.mlm_mode == 'mdn':
             self.context_mlm_trans = MixtureDensityNetwork(self.encoder_config.hidden_size,
@@ -177,7 +165,6 @@ class DialogBERT(nn.Module):
 
     def from_pretrained(self, model_dir):
         self.encoder_config = BertConfig.from_pretrained(model_dir)
-        self.tokenizer = BertTokenizer.from_pretrained(path.join(model_dir, 'tokenizer'))
         self.utt_encoder = BertForPreTraining.from_pretrained(path.join(model_dir, 'utt_encoder'))
         self.context_encoder = BertModel.from_pretrained(path.join(model_dir, 'context_encoder'))
         self.context_mlm_trans = BertPredictionHeadTransform(self.encoder_config)
@@ -195,10 +182,9 @@ class DialogBERT(nn.Module):
             for dir_ in dir_list: os.makedirs(dir_, exist_ok=True)
 
         make_list_dirs(
-            [path.join(output_dir, name) for name in ['tokenizer', 'utt_encoder', 'context_encoder', 'decoder']])
+            [path.join(output_dir, name) for name in ['utt_encoder', 'context_encoder', 'decoder']])
         model_to_save = self.module if hasattr(self, 'module') else self
         model_to_save.encoder_config.save_pretrained(output_dir)  # Save configuration file
-        model_to_save.tokenizer.save_pretrained(path.join(output_dir, 'tokenizer'))
         model_to_save.utt_encoder.save_pretrained(path.join(output_dir, 'utt_encoder'))
         model_to_save.context_encoder.save_pretrained(path.join(output_dir, 'context_encoder'))
         save_module(model_to_save.context_mlm_trans, path.join(output_dir, 'context_mlm_trans.pkl'))
@@ -276,12 +262,12 @@ class DialogBERT(nn.Module):
         dec_input, dec_target = response[:, :-1].contiguous(), response[:, 1:].clone()
 
         dec_output, *_ = self.decoder(
-            dec_input, dec_input.ne(self.tokenizer.pad_token_id).long(), None, None, None, None,
+            dec_input, dec_input.ne(self.tokenizer.pad_id).long(), None, None, None, None,
             encoder_hidden_states=context_hiddens, encoder_attention_mask=context_attn_mask,
         )
 
         batch_size, seq_len, vocab_size = dec_output.size()
-        dec_target[response[:, 1:] == self.tokenizer.pad_token_id] = -100
+        dec_target[response[:, 1:] == self.tokenizer.pad_id] = -100
         dec_target[context_position_perm_id > 1] == -100  # ignore responses whose contexts are shuffled
         loss_decoder = CrossEntropyLoss()(dec_output.view(-1, vocab_size), dec_target.view(-1))
 
@@ -327,12 +313,12 @@ class DialogBERT(nn.Module):
         dec_input, dec_target = response[:, :-1].contiguous(), response[:, 1:].clone()
 
         dec_output, *_ = self.decoder(
-            dec_input, dec_input.ne(self.tokenizer.pad_token_id).long(), None, None, None, None,
+            dec_input, dec_input.ne(self.tokenizer.pad_id).long(), None, None, None, None,
             encoder_hidden_states=context_hiddens, encoder_attention_mask=context_attn_mask,
         )
 
         batch_size, seq_len, vocab_size = dec_output.size()
-        dec_target[response[:, 1:] == self.tokenizer.pad_token_id] = -100
+        dec_target[response[:, 1:] == self.tokenizer.pad_id] = -100
         dec_target[context_position_perm_id > 1] = -100  # ignore responses whose context was shuffled
         loss_decoder = CrossEntropyLoss()(dec_output.view(-1, vocab_size), dec_target.view(-1))
 
@@ -362,14 +348,14 @@ class DialogBERT(nn.Module):
         context_hiddens, context_encoding = self.context_encoding(
             context, context_utts_attn_mask, context_attn_mask)
 
-        generated = torch.zeros((num_samples, 1), dtype=torch.long, device=device).fill_(self.tokenizer.cls_token_id)
+        generated = torch.zeros((num_samples, 1), dtype=torch.long, device=device).fill_(self.tokenizer.bos_id)
         # [batch_sz x 1] (1=seq_len)
 
         sample_lens = torch.ones((num_samples, 1), dtype=torch.long, device=device)
         len_inc = torch.ones((num_samples, 1), dtype=torch.long, device=device)
         for _ in range(max_len):
             outputs, *_ = self.decoder(
-                generated, generated.ne(self.tokenizer.pad_token_id).long(), None, None, None, None,
+                generated, generated.ne(self.tokenizer.pad_id).long(), None, None, None, None,
                 encoder_hidden_states=context_hiddens, encoder_attention_mask=context_attn_mask,
             )  # [batch_size x seq_len x vocab_size]
             next_token_logits = outputs[:, -1, :] / self.decoder_config.temperature
@@ -385,10 +371,10 @@ class DialogBERT(nn.Module):
                 next_token = torch.argmax(filtered_logits, dim=-1).unsqueeze(-1)
             else:
                 next_token = torch.multinomial(torch.softmax(filtered_logits, dim=-1), num_samples=num_samples)
-            next_token[len_inc == 0] = self.tokenizer.pad_token_id
+            next_token[len_inc == 0] = self.tokenizer.pad_id
             generated = torch.cat((generated, next_token), dim=1)
             len_inc = len_inc * (
-                        next_token != self.tokenizer.sep_token_id).long()  # stop incresing length (set 0 bit) when EOS is encountered
+                        next_token != self.tokenizer.eos_id).long()  # stop incresing length (set 0 bit) when EOS is encountered
             if len_inc.sum() < 1: break
             sample_lens = sample_lens + len_inc
 

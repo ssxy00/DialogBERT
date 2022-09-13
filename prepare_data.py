@@ -11,11 +11,10 @@ import os
 import re
 from tqdm import tqdm
 import pickle as pkl
-from transformers import BertTokenizer
+from vocabs.gpt2_tokenizer import GPT2Vocab
 
 from data_loader import load_dict, save_vecs
 
-# TODO ssxy: compare MultiWoz processing code with ours
 class Index(tables.IsDescription):
     pos_utt = tables.Int32Col()  # start offset of an utterance
     res_len = tables.Int32Col()  # number of tokens till the end of response
@@ -42,14 +41,11 @@ def binarize(dialogs, tokenizer, output_path):
         ctx_len = 0
         for k, (caller, utt, feature) in enumerate(dialog['utts']):
             floor = -1 if caller == 'A' else -2
-            idx_utt = tokenizer.encode(utt)
-            # TODO ssxy: cls and sep are added, how to truncate?
-            if idx_utt[0] != tokenizer.cls_token_id: idx_utt = [tokenizer.cls_token_id] + idx_utt
-            if idx_utt[-1] != tokenizer.sep_token_id: idx_utt = idx_utt + [tokenizer.sep_token_id]
+            idx_utt = tokenizer.string2ids(utt) + [tokenizer.eos_id]  # ssxy: 这里的 eos_id 是用来在数据预处理时断句的，在数据预处理时还会再次处理 bos 和 eos
             arr_contexts.append([floor])
             arr_contexts.append(idx_utt)
             n_tokens += len(idx_utt) + 1
-            if k > 0:  # ignore the first utterance which has no context
+            if k >= 7:  # ignore the first seven utterances
                 ind = indices.row
                 ind['pos_utt'] = pos_utt
                 ind['res_len'] = len(idx_utt) + 1
@@ -57,17 +53,21 @@ def binarize(dialogs, tokenizer, output_path):
                 ind.append()
             ctx_len += len(idx_utt) + 1
             pos_utt += len(idx_utt) + 1
-        ctx_len = 0
     f.close()
 
 
 def get_daily_dial_data(data_path):
-    # ssxy: this parser keeps the last 'eou' with the last utterance, our parser is better
     dialogs = []
     dials = open(data_path, 'r').readlines()
     for dial in dials:
+        dial = dial.strip()
+        if len(dial) == 0:
+            continue
+        dial = [seq.strip() for seq in dial.split('__eou__')[:-1]]
+        if len(dial) <= 7:
+            continue
         utts = []
-        for i, utt in enumerate(dial.rsplit(' __eou__ ')):
+        for i, utt in enumerate(dial):
             caller = 'A' if i % 2 == 0 else 'B'
             utts.append((caller, utt, np.zeros((1, 1))))
         dialog = {'knowledge': '', 'utts': utts}
@@ -147,15 +147,18 @@ def get_multiwoz_data(data_path):
     return dialogs[:-2000], dialogs[-2000:-1000], dialogs[-1000:]
 
 
-def load_data(data_path, data_name):
+def load_data(data_name):
     data = {'train': [], 'valid': [], 'test': []}
-    if args.data_set == 'dailydial':
-        data['train'] = get_daily_dial_data(data_path + 'train.utts.txt')
-        data['valid'] = get_daily_dial_data(data_path + 'valid.utts.txt')
-        data['test'] = get_daily_dial_data(data_path + 'test.utts.txt')
+    if data_name == 'dailydialog':
+        data_dir = "/home1/sxy/datasets/DailyDialog/ijcnlp_dailydialog/"
 
-    elif args.data_set == 'multiwoz':
-        train, valid, test = get_multiwoz_data(os.path.join(data_path, 'data.json'))
+        data['train'] = get_daily_dial_data(data_dir + 'train/dialogues_train.txt')
+        data['valid'] = get_daily_dial_data(data_dir + 'validation/dialogues_validation.txt')
+        data['test'] = get_daily_dial_data(data_dir + 'test/dialogues_test.txt')
+
+    elif data_name == 'multiwoz':
+        data_dir = "/home1/sxy/datasets/MultiWOZ/MultiWOZ_1.0"
+        train, valid, test = get_multiwoz_data(os.path.join(data_dir, 'data.json'))
         data['train'] = train
         data['valid'] = valid
         data['test'] = test
@@ -165,48 +168,32 @@ def load_data(data_path, data_name):
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', "--data_set", default='dailydial', help='multiwoz, dailydial')
-    parser.add_argument('-m', "--model_name", default='bert-base-uncased')
+    parser.add_argument('-d', "--data_set", default='multiwoz', help='multiwoz, dailydialog, personachat')
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = get_args()
 
-    work_dir = "./data/"
-    data_dir = work_dir + args.data_set + '/'
-
     print("loading data...")
-    data = load_data(data_dir, args.data_set)
+    data = load_data(args.data_set)
 
     train_data = data["train"]
     valid_data = data["valid"]
     test_data = data["test"]
 
-    tokenizer = BertTokenizer.from_pretrained(args.model_name, do_lower_case=True)  # TODO ssxy: load from local
+    tokenizer = GPT2Vocab(model_path="/home1/sxy/models/transformers3_gpt2-small")
+
+    output_data_dir = f"/home1/sxy/DialogBERT/datasets/{args.data_set}"
 
     print('binarizing training data')
-    train_out_path = os.path.join(data_dir, "train.h5")
+    train_out_path = os.path.join(output_data_dir, "train.h5")
     train_data_binary = binarize(train_data, tokenizer, train_out_path)
 
     print('binarizing validation data')
-    dev_out_path = os.path.join(data_dir, "valid.h5")
+    dev_out_path = os.path.join(output_data_dir, "valid.h5")
     dev_data_binary = binarize(valid_data, tokenizer, dev_out_path)
 
     print('binarizing test data')
-    test_out_path = os.path.join(data_dir, "test.h5")
+    test_out_path = os.path.join(output_data_dir, "test.h5")
     test_data_binary = binarize(test_data, tokenizer, test_out_path)
-
-    ### test binarized by visualization
-    #   dialog=train_data[0]
-    #   for caller, utt, feature in dialog['utts']:
-    #       print(caller+':'+utt.lower())
-
-    table = tables.open_file(train_out_path)
-    data = table.get_node('/sentences')
-    index = table.get_node('/indices')
-    for offset in range(2000, 2010):
-        pos_utt, ctx_len, res_len = index[offset]['pos_utt'], index[offset]['ctx_len'], index[offset]['res_len']
-        print('pos_utt:{}, ctx_len:{}, res_len:{}'.format(pos_utt, ctx_len, res_len))
-        print('context:' + tokenizer.decode(data[pos_utt - ctx_len: pos_utt]))
-        print('response:' + tokenizer.decode(data[pos_utt:pos_utt + res_len]))

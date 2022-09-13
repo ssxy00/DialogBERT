@@ -171,104 +171,59 @@ logger = logging.getLogger(__name__)
         
 class Learner(object):
     
-    def run_train(self, args, model, train_set, optim_params, entry='forward', max_steps = -1, 
-                  do_validate=True, valid_set=None, do_test=True, test_set=None):         
+    def run_train(self, args, model, train_set, optim_params, entry='forward', valid_set=None):
         tb_writer=None
-        if args.local_rank in [-1, 0]: 
-            tb_writer = SummaryWriter(f"{args.output_path}/{args.model}/{args.model_size}/logs/")# the first process create tensorboard writer
+        tb_writer = SummaryWriter(f"{args.output_path}/logs/")
         num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"number of training parameters: {num_params}")
             
-        args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-        data_sampler = RandomSampler(train_set) if args.local_rank == -1 else DistributedSampler(train_set)
+        data_sampler = RandomSampler(train_set)
         dataloader = DataLoader(train_set, sampler=data_sampler, batch_size=args.train_batch_size)
 
-        if max_steps > 0:
-            t_total = max_steps
-            args.n_epochs = max_steps // (len(dataloader) // args.grad_accum_steps) + 1
-        else:
-            t_total = len(dataloader) // args.grad_accum_steps * args.n_epochs
-
         optimizer = AdamW(optim_params, lr=args.learning_rate, eps=args.adam_epsilon)
-        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total)
-        if args.fp16:
-            try:
-                from apex import amp
-            except ImportError:
-                raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
-            model, optimizer = amp.initialize(model, optimizer, opt_level=args.fp16_opt_level)
-
-        # multi-gpu training (should be after apex fp16 initialization)
-        if args.n_gpu > 1: model = torch.nn.DataParallel(model)
-
-        # Distributed training (should be after apex fp16 initialization)
-        if args.local_rank != -1:
-            model = torch.nn.parallel.DistributedDataParallel(
-                model, device_ids=[args.local_rank], output_device=args.local_rank, find_unused_parameters=True)
 
         # Train!
         #global global_step
         global_step = 0
         train_loss, logging_loss = 0.0, 0.0
         model.zero_grad()
-        train_iterator = trange(int(args.n_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])        
-        for _ in train_iterator:
-            epoch_iterator = tqdm(dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
+        train_iterator = trange(int(args.n_epochs), desc="Epoch", disable=False)
+        assert valid_set is not None, "validate set is not provided"
+        for epoch_idx, _ in enumerate(train_iterator):
+            epoch_iterator = tqdm(dataloader, desc=f"Iteration {epoch_idx + 1}", disable=False)
             for step, batch in enumerate(epoch_iterator):
                 batch = [t.to(args.device) for t in batch]
                 model.train()
                 model1 = model.module if hasattr(model, 'module') else model
                 results = getattr(model1, entry)(*batch)    
-                
-                if args.n_gpu > 1:
-                    results = {name:loss.mean() for name, loss in results.items()}# mean() to average on multi-gpu parallel training
+
                 if args.grad_accum_steps > 1:
-                    results = {name:loss/args.grad_accum_steps for name, loss in results.items()}
+                    results = {name: loss/args.grad_accum_steps for name, loss in results.items()}
                 loss = results['loss']
-                if args.fp16:
-                    with amp.scale_loss(loss, optimizer) as scaled_loss:
-                        scaled_loss.backward()
-                else:
-                    loss.backward()
+                loss.backward()
 
                 train_loss += loss.item()
                 if (step + 1) % args.grad_accum_steps == 0:
-                    if args.fp16:
-                        nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
-                    else:
-                        nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                    nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                     optimizer.step()
-                    scheduler.step()  # Update learning rate schedule
                     model.zero_grad()
                     global_step += 1
 
-                    if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
-                        logmsg = {'lr': scheduler.get_lr()[0], 'train_loss': (train_loss - logging_loss)/args.logging_steps}
-                        logmsg.update({f"train_{name}":loss.item() for name, loss in results.items()})
-                        self.report(logmsg, global_step, tb_writer)
-                        logging_loss = train_loss
+                    logmsg = {'lr': optimizer.param_groups[0]['lr'], 'train_loss': train_loss - logging_loss}
+                    logmsg.update({f"train_{name}":loss.item() for name, loss in results.items()})
+                    self.report(logmsg, global_step, tb_writer)
+                    logging_loss = train_loss
 
-                    if args.local_rank == -1 and do_validate and global_step % args.validating_steps == 0:
-                        # Only evaluate when single GPU otherwise metrics may not average well
-                        assert valid_set is not None, "validate set is not provided"
-                        results = self.run_eval_during_training(args, model, valid_set)
-                        print(results)
-                        self.report(results, global_step, tb_writer)
-                        
-                    if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
-                        checkpoint_prefix = 'checkpoint'
-                        # Save model checkpoint
-                        output_dir = f"{args.output_path}/{args.model}/{args.model_size}/models/"
-                        self.save(args, model, output_dir, f'{checkpoint_prefix}-{global_step}')
+            results = self.run_eval_during_training(args, model, valid_set)
+            print(results)
+            self.report(results, global_step, tb_writer)
 
-                if max_steps > 0 and global_step > max_steps:
-                    epoch_iterator.close()
-                    break
-            if max_steps > 0 and global_step > max_steps:
-                train_iterator.close()
-                break
+            checkpoint_prefix = 'checkpoint'
+            # Save model checkpoint
+            output_dir = f"{args.output_path}/models/"
+            self.save(args, model, output_dir, f'{checkpoint_prefix}-{epoch_idx + 1}')
 
-        if args.local_rank in [-1, 0] and tb_writer is not None: tb_writer.close()
+        if tb_writer is not None: tb_writer.close()
 
         return global_step, train_loss / global_step
     
@@ -280,7 +235,7 @@ class Learner(object):
         model1 = model.module if hasattr(model, 'module') else model       
 
         eval_batch_size = 1 #args.per_gpu_eval_batch_size * max(1, args.n_gpu)        
-        sampler = SequentialSampler(dataset) if args.local_rank == -1 else DistributedSampler(dataset)
+        sampler = SequentialSampler(dataset)
         dataloader = DataLoader(dataset, sampler=sampler, batch_size=eval_batch_size)       
 
         device = next(model1.parameters()).device
@@ -299,20 +254,22 @@ class Learner(object):
             with torch.no_grad():
                 sample_words, sample_lens, context, gt_response = model1.generate(batch)# nparray: [repeat x seq_len] 
                                                                             
-            pred_sents = [tokenizer.decode(sample_words[i].tolist(), skip_special_tokens=True) for i in range(num_samples)] 
+            pred_sents = [tokenizer.ids2string(sample_words[i].tolist(), skip_special_tokens=True,
+                                               clean_up_tokenization_spaces=False) for i in range(num_samples)]
             pred_tokens = [sent.split(' ') for sent in pred_sents]   
-            ref_str = tokenizer.decode(gt_response[0].tolist(), skip_special_tokens=True)#.encode('utf-8')
+            ref_str = tokenizer.ids2string(gt_response[0].tolist(), skip_special_tokens=True,
+                                           clean_up_tokenization_spaces=False)#.encode('utf-8')
 
-            max_bleu, avg_bleu = Metrics.sim_bleu(pred_tokens, ref_str.split(' '))
+            max_bleu, avg_bleu = Metrics.sim_bleu(pred_tokens, ref_str.split())
             recall_bleus.append(max_bleu)
             prec_bleus.append(avg_bleu)
-            max_meteor, avg_meteor = Metrics.sim_meteor(pred_sents, ref_str)
+            max_meteor, avg_meteor = Metrics.sim_meteor(pred_tokens, ref_str.split())
             recall_meteors.append(max_meteor)
             prec_meteors.append(avg_meteor)
-            max_nist, avg_nist = Metrics.sim_nist(pred_tokens, ref_str.split(' '))
+            max_nist, avg_nist = Metrics.sim_nist(pred_tokens, ref_str.split())
             recall_nists.append(max_nist)
             prec_nists.append(avg_nist)
-            max_rougeL, avg_rougeL = Metrics.sim_rougeL(pred_tokens, ref_str.split(' '))
+            max_rougeL, avg_rougeL = Metrics.sim_rougeL(pred_tokens, ref_str.split())
             recall_rougeLs.append(max_rougeL)
             prec_rougeLs.append(avg_rougeL)
             avg_lens.append(np.mean(sample_lens))
@@ -325,7 +282,8 @@ class Learner(object):
             batch_size, ctx_len, max_utt_len = context.shape
             start = np.maximum(0, ctx_len-8)
             for t_id in range(start, ctx_len, 1):
-                context_str = tokenizer.decode(context[0, t_id].tolist(), skip_special_tokens=True)
+                context_str = tokenizer.ids2string(context[0, t_id].tolist(), skip_special_tokens=True,
+                                                   clean_up_tokenization_spaces=False)
                 if context_str.strip() == '': continue
                 generated_text.append(f"Context {t_id}: {context_str}\n")
             #print the ground truth response    
@@ -359,7 +317,7 @@ class Learner(object):
         model1 = model.module if hasattr(model, 'module') else model
 
         eval_batch_size = 1  # args.per_gpu_eval_batch_size * max(1, args.n_gpu)
-        sampler = SequentialSampler(dataset) if args.local_rank == -1 else DistributedSampler(dataset)
+        sampler = SequentialSampler(dataset)
         dataloader = DataLoader(dataset, sampler=sampler, batch_size=eval_batch_size)
 
         device = next(model1.parameters()).device

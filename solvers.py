@@ -33,17 +33,10 @@ class DialogBERTSolver(object):
         
     def build(self, args):
         # Load pretrained model and tokenizer
-        if args.local_rank not in [-1, 0]:
-            torch.distributed.barrier() # make sure only the first process in distributed training download model & vocab
-        
         if self.model is None:
-            self.model = DialogBERT(args)    
-            
+            self.model = DialogBERT(args)
         self.model.to(args.device)
 
-        if args.local_rank == 0:
-            torch.distributed.barrier() # End of barrier to make sure only the first process in distributed training download model & vocab
-        
     def load(self, args):
         # Load a trained model and vocabulary that you have fine-tuned
         assert args.reload_path, "please specify the checkpoint path in args.reload_path"
@@ -53,7 +46,6 @@ class DialogBERTSolver(object):
     def train(self, args):   
         
         ## Train All
-        if args.local_rank not in [-1, 0]: torch.distributed.barrier()# only the first process process the dataset, others use cache
         # ssxy: there are special settings for MUR and DUOR, but GLCM can ignore
         train_set = HBertMseEuopDataset(
             os.path.join(args.data_path, 'train.h5'), 
@@ -62,12 +54,10 @@ class DialogBERTSolver(object):
         )
         valid_set = HBertMseEuopDataset(os.path.join(args.data_path, 'valid.h5'), self.model.tokenizer)
         test_set = HBertMseEuopDataset(os.path.join(args.data_path, 'test.h5'), self.model.tokenizer)
-        
-        if args.local_rank == 0: torch.distributed.barrier() # end of barrier
-        
+
         optim_params = get_optim_params([self.model], args)
         global_step, tr_loss = Learner().run_train(
-            args, self.model, train_set, optim_params, entry='forward', max_steps = args.max_steps, valid_set=valid_set, do_test=True, test_set=test_set)
+            args, self.model, train_set, optim_params, entry='forward', valid_set=valid_set)
         
         return global_step, tr_loss
     

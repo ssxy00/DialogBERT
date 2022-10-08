@@ -63,7 +63,7 @@ class DialogBERTSolver(object):
     
     def evaluate(self, args):
         self.load(args)
-        test_set = HBertMseEuopDataset(os.path.join(args.data_path, 'test.h5'), self.model.tokenizer)
+        test_set = HBertMseEuopDataset(os.path.join(args.data_path, 'test.h5'), self.model.tokenizer, do_test=args.do_test)
         result, generated_text = Learner().run_eval(args, self.model, test_set)
         with open(args.eval_output_path, 'w') as f_eval:
             f_eval.write(generated_text+'\n')

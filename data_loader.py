@@ -25,7 +25,8 @@ class DialogTransformerDataset(data.Dataset):
     def __init__(self, file_path, tokenizer,
                  min_num_utts=1, max_num_utts=7, max_utt_len=30,
                  block_size=256, utt_masklm=False, utt_sop=False,
-                 context_shuf=False, context_masklm=False):
+                 context_shuf=False, context_masklm=False, do_test=False):
+        self.do_test = do_test
         # 1. Initialize file path or list of file names.
         """read training sentences(list of int array) from a hdf5 file"""
         self.tokenizer = tokenizer
@@ -78,7 +79,9 @@ class DialogTransformerDataset(data.Dataset):
                 context.append(utt)  # append utt to context          
                 tmp_utt = []  # reset tmp utt
         response = res_arr[1:-1]  # remove floor and eos
-        res_len = min(len(response), self.max_utt_len)
+        res_len = len(response)
+        if not self.do_test:
+            res_len = min(len(response), self.max_utt_len)
         response = [self.tokenizer.bos_id] + response[:res_len] + [self.tokenizer.eos_id]
 
         num_utts = min(len(context), self.max_num_utts)
@@ -105,7 +108,7 @@ class DialogTransformerDataset(data.Dataset):
             return L
         elif list_dim(L) == 1:
             arr = np.zeros(d1_len, dtype=dtype) + pad_idx
-            for i, v in enumerate(L): arr[i] = v
+            for i, v in enumerate(L): arr[i] = v  # ssxy: L 的长度不可能大于 d1_len，否则会报错
             return arr
         elif list_dim(L) == 2:
             arr = np.zeros((d2_len, d1_len), dtype=dtype) + pad_idx
@@ -177,14 +180,15 @@ class HBertMseEuopDataset(DialogTransformerDataset):
     def __init__(self, file_path, tokenizer,
                  min_num_utts=1, max_num_utts=9, max_utt_len=30,  # ssxy: why 9? including cls_utt and sep_utt
                  block_size=-1, utt_masklm=False, utt_sop=False,
-                 context_shuf=False, context_masklm=False):
+                 context_shuf=False, context_masklm=False, do_test=False):
 
         super(HBertMseEuopDataset, self).__init__(
             file_path, tokenizer, min_num_utts, max_num_utts, max_utt_len, block_size, utt_masklm, utt_sop,
-            context_shuf, context_masklm)
+            context_shuf, context_masklm, do_test)
 
         self.cls_utt = [tokenizer.bos_id, tokenizer.bos_id, tokenizer.eos_id]
         self.sep_utt = [tokenizer.bos_id, tokenizer.eos_id, tokenizer.eos_id]
+        self.do_test = do_test
 
     def __getitem__(self, offset):
         context, response = super().__getitem__(offset)
@@ -216,7 +220,10 @@ class HBertMseEuopDataset(DialogTransformerDataset):
         context_mlm_target = self.list2array(context_mlm_target, self.max_utt_len + 2, self.max_num_utts, pad_idx=-100)
         context_position_ids = self.list2array(context_position_ids, self.max_num_utts)
 
-        response = self.list2array(response, self.max_utt_len + 2, pad_idx=self.tokenizer.pad_id)  # for decoder training
+        if self.do_test:
+            response = self.list2array(response, len(response), pad_idx=self.tokenizer.pad_id)  # for decoder training
+        else:
+            response = self.list2array(response, self.max_utt_len + 2, pad_idx=self.tokenizer.pad_id)  # for decoder training
 
         return context, context_utts_attn_mask, context_attn_mask, \
                context_mlm_target, context_position_perm_id, context_position_ids, response

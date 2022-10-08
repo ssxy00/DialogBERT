@@ -339,7 +339,7 @@ class DialogBERT(nn.Module):
             context_position_ids, response)
         return results['loss'].item()
 
-    def generate(self, input_batch, max_len=30, num_samples=1, mode='sample'):
+    def generate(self, input_batch, max_len=60, num_samples=1, mode='sample'):
         self.eval()
         device = next(self.parameters()).device
         context, context_utts_attn_mask, context_attn_mask = [t.to(device) for t in input_batch[:3]]

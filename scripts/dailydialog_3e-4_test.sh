@@ -6,7 +6,7 @@ ckpt=8
 DATA_PATH=/home1/sxy/DialogBERT/datasets/
 GPT2_VOCAB_DIR=/home1/sxy/models/transformers3_gpt2-small
 RELOAD_PATH=/home1/sxy/DialogBERT/output/${dataset}/lr${lr}/models/checkpoint-${ckpt}
-EVAL_OUTPUT_PATH=/home1/sxy/DialogBERT/output/results/${dataset}_lr${lr}_ckpt${ckpt}.txt
+EVAL_OUTPUT_PATH=/home1/sxy/DialogBERT/output/results_new/${dataset}_lr${lr}_ckpt${ckpt}.txt
 
 CUDA_VISIBLE_DEVICES=0 python main.py \
 --do_test \

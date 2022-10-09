@@ -32,3 +32,19 @@ nist = 0.4203184224172626
 perplexity = 5.963738918304443
 rouge-L = 0.1450864178597785
 valid_loss = 1.7856975986980166
+
+## Experiment on PersonaChat
+因为没想好 persona 的部分要怎么处理，所以现在的实验中直接把 persona 扔掉了
+
+fix lr, tune lr on [5e-5, 8e-5, 1e-4]
+choose lr=8e-5, step15070, ckpt7
+
+test results:
+
+avg_len = 12.786873840445269
+bleu = 0.06556580196044658
+meteor = 0.07826479254076116
+nist = 0.32445281356699346
+perplexity = 46.892879486083984
+rouge-L = 0.1082527998176345
+valid_loss = 3.847865749972981

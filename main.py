@@ -36,7 +36,7 @@ def main():
     parser.add_argument("--output_path", default='/home1/sxy/DialogBERT/output', type=str, help="The output data path.")
     parser.add_argument("--gpt2_vocab_dir", default="/home1/sxy/models/transformers3_gpt2-small", type=str,
                         help="bert-base-uncased path")
-    parser.add_argument("--dataset", default='multiwoz', type=str, help="dataset name")
+    parser.add_argument("--dataset", default='personachat', type=str, help="dataset name")
     parser.add_argument("--model", default="DialogBERT", type=str, help="The model architecture to be fine-tuned.")
     parser.add_argument("--train_batch_size", default=64, type=int, help="Batch size per GPU/CPU for training.")
     parser.add_argument('--grad_accum_steps', type=int, default=1,

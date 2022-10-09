@@ -147,6 +147,43 @@ def get_multiwoz_data(data_path):
     return dialogs[:-2000], dialogs[-2000:-1000], dialogs[-1000:]
 
 
+def get_personachat_data(data_path):
+    with open(data_path, 'r', encoding='utf-8') as file:
+        dialogs = []
+        utts = []
+        for line in tqdm(file.readlines()):
+            line = line.strip()
+            if len(line) == 0:
+                continue
+            space_idx = line.find(' ')
+            if space_idx == -1:
+                dialog_idx = int(line)
+            else:
+                dialog_idx = int(line[:space_idx])
+            if int(dialog_idx) == 1:
+                if len(utts):
+                    dialog = {'knowledge': '', 'utts': utts}
+                    dialogs.append(dialog)
+                utts = []
+                caller = 'A'
+
+            dialog_line = line[space_idx + 1:].split('\t')
+            dialog_line = [l.strip() for l in dialog_line]
+
+            if dialog_line[0].startswith('your persona:'):
+                persona_info = dialog_line[0].replace('your persona: ', '')
+            if dialog_line[0].startswith('partner\'s persona:'):
+                persona_info = dialog_line[0].replace('partner\'s persona: ', '')
+            elif len(dialog_line) > 1:
+                utts.append((caller, dialog_line[0], np.zeros((1, 1))))
+                caller = 'B' if caller == 'A' else 'A'
+                utts.append((caller, dialog_line[1], np.zeros((1, 1))))
+                caller = 'B' if caller == 'A' else 'A'
+        if len(utts):
+            dialog = {'knowledge': '', 'utts': utts}
+            dialogs.append(dialog)
+    return dialogs
+
 def load_data(data_name):
     data = {'train': [], 'valid': [], 'test': []}
     if data_name == 'dailydialog':
@@ -163,12 +200,21 @@ def load_data(data_name):
         data['valid'] = valid
         data['test'] = test
 
+    elif data_name == "personachat":
+        data["train"] = get_personachat_data("/home1/sxy/datasets/ConvAI2_data/ConvAI2/train_both_original_no_cands.txt")
+        valid_and_test_data = get_personachat_data("/home1/sxy/datasets/ConvAI2_data/ConvAI2/valid_both_original_no_cands.txt")
+        random.seed(0)
+        random.shuffle(valid_and_test_data)
+        n_valid_data = len(valid_and_test_data)
+        data["valid"] = valid_and_test_data[: n_valid_data // 2]
+        data["test"] = valid_and_test_data[n_valid_data // 2:]
+
     return data
 
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', "--data_set", default='multiwoz', help='multiwoz, dailydialog, personachat')
+    parser.add_argument('-d', "--data_set", default='personachat', help='multiwoz, dailydialog, personachat')
     return parser.parse_args()
 
 
